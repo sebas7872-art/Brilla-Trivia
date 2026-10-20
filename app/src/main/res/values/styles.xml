@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">Brilla Trivia</string>
-    <string name="accessibility_description">Brilla lee los mensajes visibles del chat que confirmás, identifica respuestas y escribe anuncios mediante las acciones oficiales de Android. No usa Internet ni envía información a servidores. Podés detenerla desde el panel o la notificación. Solo funciona si el chat expone sus elementos a accesibilidad.</string>
+    <string name="app_name">Ayelén Trivia🏹</string>
+    <string name="accessibility_description">Ayelén Trivia🏹 lee los mensajes visibles del chat que confirmás, identifica respuestas y escribe anuncios mediante las acciones oficiales de Android. No usa Internet ni envía información a servidores. Podés detenerla desde el panel o la notificación. Solo funciona si el chat expone sus elementos a accesibilidad.</string>
     <color name="icon_bg">#EFD9F3</color>
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item><item name="android:colorAccent">#B63D79</item>

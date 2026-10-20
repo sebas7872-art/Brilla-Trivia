@@ -33,12 +33,19 @@ object Json {
         .put("sendIntervalMs",c.sendIntervalMs).put("messageLength",c.messageLength)
     fun config(j: JSONObject): GameConfig = GameConfig(j.optInt("rounds",10),j.optLong("answerMs",10000),j.optLong("intervalMs",5000),j.optInt("points",1),j.optBoolean("random",true),j.optBoolean("repeat",true),j.optBoolean("randomCycles",true),j.optBoolean("exhaustFirst",true),j.optBoolean("multipleWinners",true),j.optBoolean("showRanking",true),j.optInt("rankingSize",10),j.optBoolean("ignoreAccents",true),j.optLong("sendIntervalMs",3000),j.optInt("messageLength",500))
     fun strings(a: JSONArray): List<String> = (0 until a.length()).map { a.getString(it) }
-    fun question(j: JSONObject) = Question(j.getLong("id"),j.getString("text"),strings(j.getJSONArray("answers")))
-    fun template(j: JSONObject) = Template(j.getString("key"),j.getString("label"),j.getString("text"),j.optBoolean("enabled",true),j.optInt("order",0))
-    fun templates(a: JSONArray): List<Template> = (0 until a.length()).map { template(a.getJSONObject(it)) }
-    fun templates(ts: List<Template>): JSONArray = JSONArray().also { a -> ts.forEach { a.put(JSONObject().put("key",it.key).put("label",it.label).put("text",it.text).put("enabled",it.enabled).put("order",it.order)) } }
-    fun publication(j: JSONObject) = Publication(j.getLong("id"),j.getString("text"))
-    fun state(s: EngineState): String = JSONObject().put("config",config(s.config)).put("plan",JSONArray().also { a -> s.plan.forEach { a.put(JSONObject().put("id",it.id).put("text",it.text).put("answers",JSONArray(it.answers))) } }).put("templates",templates(s.templates)).put("phase",s.phase.name).put("index",s.index).put("scores",JSONObject().also { o -> s.scores.forEach { (k,v) -> o.put(k,v) } }).put("history",JSONArray().also { a -> s.history.forEach { a.put(JSONObject().put("number",it.number).put("question",it.question).put("answer",it.answer).put("winners",JSONArray(it.winners))) } }).put("winners",JSONArray(s.winners)).put("remaining",s.remainingMs).put("queue",JSONArray().also { a -> s.queued.forEach { a.put(JSONObject().put("id",it.id).put("text",it.text)) } }).put("flight",s.flight?.let { JSONObject().put("id",it.id).put("text",it.text) }).put("serial",s.serial).put("seen",JSONArray(s.seen)).put("uncertain",s.uncertain).put("notice",s.notice).put("startedAt",s.startedAt).toString()
+    fun templates(ts: List<Template>): JSONArray = JSONArray(ts.map { JSONObject().put("key",it.key).put("text",it.text).put("enabled",it.enabled).put("order",it.order) })
+    fun templates(a: JSONArray): List<Template> {
+        val stored=(0 until a.length()).map { a.getJSONObject(it) }.associateBy { it.getString("key") }
+        return Templates.defaults().map { t -> stored[t.key]?.let { t.copy(text=it.getString("text"),enabled=it.optBoolean("enabled",true),order=it.optInt("order",t.order)) } ?: t }
+    }
+    private fun question(q: Question)=JSONObject().put("id",q.id).put("text",q.text).put("answers",JSONArray(q.answers))
+    private fun question(j: JSONObject)=Question(j.getLong("id"),j.getString("text"),strings(j.getJSONArray("answers")))
+    private fun publication(p: Publication)=JSONObject().put("id",p.id).put("text",p.text)
+    private fun publication(j: JSONObject)=Publication(j.getLong("id"),j.getString("text"))
+    fun state(s: EngineState): String = JSONObject().put("config",config(s.config)).put("plan",JSONArray(s.plan.map(::question))).put("templates",templates(s.templates))
+        .put("phase",s.phase.name).put("index",s.index).put("scores",JSONObject(s.scores)).put("history",JSONArray(s.history.map { JSONObject().put("number",it.number).put("question",it.question).put("answer",it.answer).put("winners",JSONArray(it.winners)) }))
+        .put("winners",JSONArray(s.winners)).put("remaining",s.remainingMs).put("queue",JSONArray(s.queued.map(::publication))).put("flight",s.flight?.let(::publication))
+        .put("serial",s.serial).put("seen",JSONArray(s.seen)).put("uncertain",s.uncertain).put("notice",s.notice).put("startedAt",s.startedAt).toString()
     fun state(raw: String): EngineState {
         val j=JSONObject(raw); val p=j.getJSONArray("plan"); val h=j.getJSONArray("history"); val q=j.getJSONArray("queue"); val scores=j.getJSONObject("scores")
         return EngineState(config(j.getJSONObject("config")),(0 until p.length()).map { question(p.getJSONObject(it)) },templates(j.getJSONArray("templates")),Phase.valueOf(j.getString("phase")),j.getInt("index"),scores.keys().asSequence().associateWith { scores.getInt(it) },(0 until h.length()).map { h.getJSONObject(it).let { r -> RoundResult(r.getInt("number"),r.getString("question"),r.getString("answer"),strings(r.getJSONArray("winners"))) } },strings(j.getJSONArray("winners")),j.getLong("remaining"),(0 until q.length()).map { publication(q.getJSONObject(it)) },j.optJSONObject("flight")?.let(::publication),j.getLong("serial"),strings(j.getJSONArray("seen")),j.optBoolean("uncertain"),j.optString("notice"),j.optLong("startedAt"))

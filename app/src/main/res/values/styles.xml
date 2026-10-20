@@ -1,10 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#0D0D0D</item>
-        <item name="android:statusBarColor">#0D0D0D</item>
-        <item name="android:navigationBarColor">#0D0D0D</item>
-        <item name="android:textColorPrimary">#F5F5F5</item>
-        <item name="android:textColorSecondary">#AAAAAA</item>
+    <string name="app_name">Brilla Trivia</string>
+    <string name="accessibility_description">Brilla lee los mensajes visibles del chat que confirmás, identifica respuestas y escribe anuncios mediante las acciones oficiales de Android. No usa Internet ni envía información a servidores. Podés detenerla desde el panel o la notificación. Solo funciona si el chat expone sus elementos a accesibilidad.</string>
+    <color name="icon_bg">#EFD9F3</color>
+    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#B63D79</item>
+        <item name="android:statusBarColor">#F8EFF8</item><item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#332438</item><item name="android:windowBackground">#FFF8FC</item>
     </style>
 </resources>

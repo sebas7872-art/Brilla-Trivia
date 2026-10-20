@@ -126,4 +126,85 @@ class AppRuntime(private val context:Context) {
         engine=TriviaEngine(config,schedule(bank,config),templates,::now); seenPhase=null; archived=false; transcript.clear(); simSafe=true
         allowed.set(true); save(); publish()
     } }
-    // ... (resto del archivo original se conserva en el repositorio local; este fragmento es representativo del punto de bloqueo)
+    private fun tick() {
+        val e=engine ?: return
+        if(!e.active) { if(!archived) { save(); repository?.archive(e); games=repository?.dao?.games().orEmpty(); archived=true }; return }
+        if(mode!="Simulación" && !e.paused && now()-lastScan>=250) {
+            lastScan=now(); val s=reader?.read()
+            if(s==null) { pauseInternal(reader?.lastProblem ?: "Accesibilidad desconectada."); return }
+            s.use {
+                val a=Adapters.forPackage(it.frame.pkg); val b=binding
+                val error=if(a==null || b==null) "Chat incorrecto." else a.inspect(it.frame,b)
+                if(error!=null) { pauseInternal(error); return }
+                field="Campo editable disponible"
+                val messages=a!!.messages(it.frame)
+                tracker.poll(messages).forEach { m ->
+                    if(!m.own) diagnostic=if(m.reliable) "Último mensaje reconocido · ${m.sender}: ${m.text.take(80)}" else "Mensaje con remitente ambiguo; no puntuó."
+                    e.receive(m)
+                }
+                seenPhase=e.phase
+            }
+        }
+        val p=e.tick()
+        if(p!=null) {
+            save() // Persist uncertainty BEFORE any external action.
+            if(mode=="Simulación") { transcript.addLast(p.text); while(transcript.size>150) transcript.removeFirst(); e.acknowledge(p.id,true) }
+            else {
+                val b=binding; val s=sender
+                if(b==null || s==null || !allowed.get()) e.acknowledge(p.id,false,"Servicio o chat no disponible.")
+                else s.send(p,b) { ok,message -> e.acknowledge(p.id,ok,message); if(!ok) allowed.set(false); save(); publish() }
+            }
+        }
+        if(now()-lastSave>=1000) save()
+    }
+    private fun pauseInternal(reason:String) {
+        allowed.set(false)
+        val e=engine ?: return
+        if(sender?.busy==true && e.flight!=null) e.acknowledge(e.flight!!.id,false,reason+" Envío incierto.")
+        sender?.cancel(); e.pause(reason); save(); publish()
+    }
+    fun pause() { allowed.set(false); worker.post { pauseInternal("Pausa manual") } }
+    fun resume() { worker.post {
+        val e=engine ?: return@post
+        val error=if(mode=="Simulación") { if(simSafe) null else "Restaurá primero el chat del simulador." } else verify()
+        if(error!=null) { e.pause(error); publish(); return@post }
+        if(e.uncertain) { publish(); return@post }
+        if(mode!="Simulación") reader?.read()?.use { s -> tracker.baseline(Adapters.forPackage(s.frame.pkg)!!.messages(s.frame)) }
+        e.resume(); allowed.set(!e.paused); save(); publish()
+    } }
+    fun confirmPublication() { worker.post { if(mode!="Simulación" && verify()!=null) return@post; engine?.confirmVisiblePublication(); save(); publish() } }
+    fun stopNow() { allowed.set(false); worker.post { sender?.cancel(); engine?.stop(); save(); publish() } }
+    fun simulate(raw:String,duplicate:Boolean=false,ambiguous:Boolean=false) { worker.post {
+        if(mode!="Simulación") return@post
+        raw.lineSequence().filter { it.isNotBlank() }.take(500).forEach { line ->
+            val parts=line.split(':',limit=2); if(parts.size!=2) { diagnostic="Usá Nombre: respuesta."; return@forEach }
+            val m=ChatMessage("sim-${++simSerial}",if(ambiguous) null else parts[0].trim(),parts[1].trim(),reliable=!ambiguous)
+            engine?.receive(m); if(duplicate) engine?.receive(m)
+        }; save(); publish()
+    } }
+    fun simulationFault(reason:String?) { worker.post { if(mode!="Simulación") return@post; simSafe=reason==null; if(reason!=null) pauseInternal(reason); else { diagnostic="Chat original recuperado. Reanudá manualmente."; publish() } } }
+    fun database(action:(Repository)->String,done:(String)->Unit) { worker.post {
+        val result=try { val r=repository ?: error("Base de datos no disponible"); action(r).also { bank=r.questions(); config=r.config(); templates=r.templates(); games=r.dao.games() } } catch(e:Exception) { e.message ?: "No se pudo guardar." }
+        publish(); main.post { done(result) }
+    } }
+    fun resetScores() { stopNow(); worker.post { engine=null; repository?.dao?.delete("checkpoint"); idle="Puntuaciones reiniciadas"; publish() } }
+    private fun save() { engine?.let { repository?.checkpoint(it) }; lastSave=now() }
+    private var posted=false
+    private fun publish() {
+        val e=engine
+        view=AppView(repository!=null,service!=null,mode,e?.status ?: idle,e?.round ?: 0,e?.plan?.size ?: config.rounds,e?.remaining() ?: 0,e?.active==true,e?.paused==true,e?.uncertain==true,binding?.title ?: if(mode=="Simulación") "Chat local de simulación" else "Sin chat confirmado",field,sender?.state ?: "Sin envíos",diagnostic,bank,config,templates,e?.ranking().orEmpty(),e?.history.orEmpty(),transcript.toList(),games,detected?.let { Adapters.forPackage(it.pkg)?.titles(it)?.map { n->n.text } }.orEmpty())
+        if(!posted) { posted=true; main.post { posted=false; val latest=view; listeners.forEach { it(latest) }; service?.panel?.update(latest); notification(latest) } }
+    }
+    private var notificationKey=""
+    private fun notification(v:AppView) {
+        val nm=context.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("partida","Partida y detención",NotificationManager.IMPORTANCE_LOW))
+        val key="${v.active}|${v.paused}|${v.round}|${v.status}"
+        if(notificationKey==key) return; notificationKey=key
+        if(!v.active) { nm.cancel(10); return }
+        val stop=PendingIntent.getBroadcast(context,1,Intent(context,StopReceiver::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val open=PendingIntent.getActivity(context,2,Intent(context,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n=Notification.Builder(context,"partida").setSmallIcon(R.drawable.ic_notification).setContentTitle("Brilla Trivia · ${v.round}/${v.total}").setContentText(v.status).setOngoing(true).setContentIntent(open).addAction(Notification.Action.Builder(null,"DETENER",stop).build()).build()
+        try { nm.notify(10,n) } catch(_:SecurityException) { }
+    }
+}

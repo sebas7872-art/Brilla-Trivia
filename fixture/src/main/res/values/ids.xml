@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="chat_title" type="id"/>
+    <item name="message_text" type="id"/>
+    <item name="sender_name" type="id"/>
+    <item name="message_row" type="id"/>
+    <item name="outgoing" type="id"/>
+    <item name="send" type="id"/>
+</resources>

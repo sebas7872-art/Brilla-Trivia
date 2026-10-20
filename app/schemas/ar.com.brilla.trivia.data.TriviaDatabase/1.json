@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "placeholder",
+    "entities": [
+      {
+        "tableName": "questions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `questions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `text` TEXT NOT NULL, `answers` TEXT NOT NULL)",
+        "fields": [
+          {"fieldPath": "id", "columnName": "id", "affinity": "INTEGER", "notNull": true},
+          {"fieldPath": "text", "columnName": "text", "affinity": "TEXT", "notNull": true},
+          {"fieldPath": "answers", "columnName": "answers", "affinity": "TEXT", "notNull": true}
+        ],
+        "primaryKey": {"columnNames": ["id"], "autoGenerate": true}
+      },
+      {
+        "tableName": "settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `settings` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
+        "fields": [
+          {"fieldPath": "key", "columnName": "key", "affinity": "TEXT", "notNull": true},
+          {"fieldPath": "value", "columnName": "value", "affinity": "TEXT", "notNull": true}
+        ],
+        "primaryKey": {"columnNames": ["key"], "autoGenerate": false}
+      },
+      {
+        "tableName": "games",
+        "createSql": "CREATE TABLE IF NOT EXISTS `games` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `date` INTEGER NOT NULL, `state` TEXT NOT NULL)",
+        "fields": [
+          {"fieldPath": "id", "columnName": "id", "affinity": "INTEGER", "notNull": true},
+          {"fieldPath": "date", "columnName": "date", "affinity": "INTEGER", "notNull": true},
+          {"fieldPath": "state", "columnName": "state", "affinity": "TEXT", "notNull": true}
+        ],
+        "primaryKey": {"columnNames": ["id"], "autoGenerate": true}
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'placeholder')"
+    ]
+  }
+}

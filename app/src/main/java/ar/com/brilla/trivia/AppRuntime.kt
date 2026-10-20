@@ -126,8 +126,6 @@ class AppRuntime(private val context:Context) {
         if(templates.none { it.key=="question" && it.enabled && it.text.isNotBlank() }) { idle="Activá una plantilla de pregunta antes de jugar."; publish(); return@post }
         if(mode!="Simulación") {
             val err=verify(); if(err!=null) { idle=err; publish(); return@post }
-            // Ya no exigimos un mensaje previo de otro participante para iniciar.
-            // Solo se necesita el chat confirmado; los participantes se identifican cuando responden.
             reader?.read()?.use { s ->
                 val messages=Adapters.forPackage(s.frame.pkg)!!.messages(s.frame)
                 tracker.baseline(messages)
@@ -214,7 +212,7 @@ class AppRuntime(private val context:Context) {
         if(!v.active) { nm.cancel(10); return }
         val stop=PendingIntent.getBroadcast(context,1,Intent(context,StopReceiver::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val open=PendingIntent.getActivity(context,2,Intent(context,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val n=Notification.Builder(context,"partida").setSmallIcon(R.drawable.ic_notification).setContentTitle("Brilla Trivia · ${v.round}/${v.total}").setContentText(v.status).setOngoing(true).setContentIntent(open).addAction(Notification.Action.Builder(null,"DETENER",stop).build()).build()
+        val n=Notification.Builder(context,"partida").setSmallIcon(R.drawable.ic_notification).setContentTitle("Ayelén Trivia🏹 · ${v.round}/${v.total}").setContentText(v.status).setOngoing(true).setContentIntent(open).addAction(Notification.Action.Builder(null,"DETENER",stop).build()).build()
         try { nm.notify(10,n) } catch(_:SecurityException) { }
     }
 }

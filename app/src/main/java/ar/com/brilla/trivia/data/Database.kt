@@ -31,7 +31,8 @@ object Json {
         .put("random",c.random).put("repeat",c.repeat).put("randomCycles",c.randomCycles).put("exhaustFirst",c.exhaustFirst)
         .put("multipleWinners",c.multipleWinners).put("showRanking",c.showRanking).put("rankingSize",c.rankingSize).put("ignoreAccents",c.ignoreAccents)
         .put("sendIntervalMs",c.sendIntervalMs).put("messageLength",c.messageLength)
-    fun config(j: JSONObject): GameConfig = GameConfig(j.optInt("rounds",10),j.optLong("answerMs",10000),j.optLong("intervalMs",5000),j.optInt("points",1),j.optBoolean("random",true),j.optBoolean("repeat",true),j.optBoolean("randomCycles",true),j.optBoolean("exhaustFirst",true),j.optBoolean("multipleWinners",true),j.optBoolean("showRanking",true),j.optInt("rankingSize",10),j.optBoolean("ignoreAccents",true),j.optLong("sendIntervalMs",3000),j.optInt("messageLength",500))
+        .put("hostPlays",c.hostPlays).put("hostName",c.hostName)
+    fun config(j: JSONObject): GameConfig = GameConfig(j.optInt("rounds",10),j.optLong("answerMs",10000),j.optLong("intervalMs",5000),j.optInt("points",1),j.optBoolean("random",true),j.optBoolean("repeat",true),j.optBoolean("randomCycles",true),j.optBoolean("exhaustFirst",true),j.optBoolean("multipleWinners",true),j.optBoolean("showRanking",true),j.optInt("rankingSize",10),j.optBoolean("ignoreAccents",true),j.optLong("sendIntervalMs",3000),j.optInt("messageLength",500),j.optBoolean("hostPlays",false),j.optString("hostName","Ayelén🏹"))
     fun strings(a: JSONArray): List<String> = (0 until a.length()).map { a.getString(it) }
     fun templates(ts: List<Template>): JSONArray = JSONArray(ts.map { JSONObject().put("key",it.key).put("text",it.text).put("enabled",it.enabled).put("order",it.order) })
     fun templates(a: JSONArray): List<Template> {
@@ -43,12 +44,19 @@ object Json {
     private fun publication(p: Publication)=JSONObject().put("id",p.id).put("text",p.text)
     private fun publication(j: JSONObject)=Publication(j.getLong("id"),j.getString("text"))
     fun state(s: EngineState): String = JSONObject().put("config",config(s.config)).put("plan",JSONArray(s.plan.map(::question))).put("templates",templates(s.templates))
-        .put("phase",s.phase.name).put("index",s.index).put("scores",JSONObject(s.scores)).put("history",JSONArray(s.history.map { JSONObject().put("number",it.number).put("question",it.question).put("answer",it.answer).put("winners",JSONArray(it.winners)) }))
+        .put("phase",s.phase.name).put("index",s.index).put("scores",JSONObject(s.scores))
+        .put("history",JSONArray(s.history.map { JSONObject().put("number",it.number).put("question",it.question).put("answer",it.answer).put("winners",JSONArray(it.winners)).put("pointsByName",JSONObject(it.pointsByName)) }))
         .put("winners",JSONArray(s.winners)).put("remaining",s.remainingMs).put("queue",JSONArray(s.queued.map(::publication))).put("flight",s.flight?.let(::publication))
-        .put("serial",s.serial).put("seen",JSONArray(s.seen)).put("uncertain",s.uncertain).put("notice",s.notice).put("startedAt",s.startedAt).toString()
+        .put("serial",s.serial).put("seen",JSONArray(s.seen)).put("uncertain",s.uncertain).put("notice",s.notice).put("startedAt",s.startedAt)
+        .put("autoTexts",JSONArray(s.autoTexts)).put("roundPoints",JSONObject(s.roundPoints)).toString()
     fun state(raw: String): EngineState {
         val j=JSONObject(raw); val p=j.getJSONArray("plan"); val h=j.getJSONArray("history"); val q=j.getJSONArray("queue"); val scores=j.getJSONObject("scores")
-        return EngineState(config(j.getJSONObject("config")),(0 until p.length()).map { question(p.getJSONObject(it)) },templates(j.getJSONArray("templates")),Phase.valueOf(j.getString("phase")),j.getInt("index"),scores.keys().asSequence().associateWith { scores.getInt(it) },(0 until h.length()).map { h.getJSONObject(it).let { r -> RoundResult(r.getInt("number"),r.getString("question"),r.getString("answer"),strings(r.getJSONArray("winners"))) } },strings(j.getJSONArray("winners")),j.getLong("remaining"),(0 until q.length()).map { publication(q.getJSONObject(it)) },j.optJSONObject("flight")?.let(::publication),j.getLong("serial"),strings(j.getJSONArray("seen")),j.optBoolean("uncertain"),j.optString("notice"),j.optLong("startedAt"))
+        val auto = j.optJSONArray("autoTexts")?.let { strings(it) } ?: emptyList()
+        val rp = j.optJSONObject("roundPoints")?.let { o -> o.keys().asSequence().associateWith { o.getInt(it) } } ?: emptyMap()
+        return EngineState(config(j.getJSONObject("config")),(0 until p.length()).map { question(p.getJSONObject(it)) },templates(j.getJSONArray("templates")),Phase.valueOf(j.getString("phase")),j.getInt("index"),scores.keys().asSequence().associateWith { scores.getInt(it) },(0 until h.length()).map { h.getJSONObject(it).let { r ->
+            val pb = r.optJSONObject("pointsByName")?.let { o -> o.keys().asSequence().associateWith { o.getInt(it) } } ?: emptyMap()
+            RoundResult(r.getInt("number"),r.getString("question"),r.getString("answer"),strings(r.getJSONArray("winners")), pb)
+        } },strings(j.getJSONArray("winners")),j.getLong("remaining"),(0 until q.length()).map { publication(q.getJSONObject(it)) },j.optJSONObject("flight")?.let(::publication),j.getLong("serial"),strings(j.getJSONArray("seen")),j.optBoolean("uncertain"),j.optString("notice"),j.optLong("startedAt"), auto, rp)
     }
 }
 class Repository(context: Context) {

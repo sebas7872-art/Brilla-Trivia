@@ -18,7 +18,7 @@ data class AppView(
     val chat:String="Sin chat confirmado",val field:String="Sin campo",val sender:String="Sin envíos",val diagnostic:String="",
     val questions:List<Question> = emptyList(),val config:GameConfig=GameConfig(),val templates:List<Template> = Templates.defaults(),
     val ranking:List<Score> = emptyList(),val history:List<RoundResult> = emptyList(),val transcript:List<String> = emptyList(),
-    val games:List<GameRecord> = emptyList(),val candidates:List<String> = emptyList()
+    val games:List<GameRecord> = emptyList(),val candidates:List<String> = emptyList(), val diagLog:List<String> = emptyList()
 )
 class AppRuntime(private val context:Context) {
     val worker=Handler(HandlerThread("Brilla-coordinador").apply { start() }.looper)
@@ -49,6 +49,7 @@ class AppRuntime(private val context:Context) {
     private var simSerial=0L
     private val transcript=ArrayDeque<String>()
     private var simSafe=true
+    private val diagLog = ArrayDeque<String>()
     private val pulse=object:Runnable { override fun run() {
         try { tick() } catch(e:Exception) { allowed.set(false); sender?.cancel(); engine?.pause("Error interno; revisá Diagnóstico."); diagnostic=e.javaClass.simpleName+": "+e.message.orEmpty().take(160) }
         publish(); worker.postDelayed(this,100)
@@ -146,15 +147,24 @@ class AppRuntime(private val context:Context) {
                 if(error!=null) { pauseInternal(error); return }
                 field="Campo editable disponible"
                 val messages=a!!.messages(it.frame)
+                // Re-baseline when entering answer window so previous chat is ignored
+                if (e.phase == Phase.ANSWERS && seenPhase != Phase.ANSWERS) {
+                    tracker.rebaseline(messages)
+                }
                 tracker.poll(messages).forEach { m ->
                     val scored = e.receive(m)
-                    diagnostic = when {
-                        scored -> "Puntuó · ${if(m.own) config.hostName else m.sender}: ${m.text.take(60)}"
-                        m.own && !m.reliable -> "Mensaje propio de origen incierto; no puntuó."
-                        m.own && !config.hostPlays -> "Mensaje propio (anfitriona no juega); no puntuó."
-                        !m.reliable -> "Mensaje con remitente ambiguo; no puntuó."
-                        else -> "Mensaje visto · ${m.sender ?: "sin remitente"}: ${m.text.take(60)}"
+                    val reason = when {
+                        scored -> "ACEPTADA · ${if(m.own) config.hostName else m.sender} +puntos"
+                        m.own && !m.reliable -> "propio ambiguo"
+                        m.own && !config.hostPlays -> "propio (anfitriona no juega)"
+                        !m.reliable -> "remitente desconocido"
+                        m.sender in e.winners -> "ya puntuó"
+                        else -> "no coincide o fuera de tiempo"
                     }
+                    val entry = "${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())} | ${e.phase.label} | ${(e.remaining()+999)/1000}s | ${if(m.own) "PROPIO" else "AJENO"} | ${m.sender ?: "-"} | ${m.text.take(40)} | $reason"
+                    diagLog.addLast(entry)
+                    while (diagLog.size > 40) diagLog.removeFirst()
+                    diagnostic = entry
                 }
                 seenPhase=e.phase
             }
@@ -206,7 +216,7 @@ class AppRuntime(private val context:Context) {
     private var posted=false
     private fun publish() {
         val e=engine
-        view=AppView(repository!=null,service!=null,mode,e?.status ?: idle,e?.round ?: 0,e?.plan?.size ?: config.rounds,e?.remaining() ?: 0,e?.active==true,e?.paused==true,e?.uncertain==true,binding?.title ?: if(mode=="Simulación") "Chat local de simulación" else "Sin chat confirmado",field,sender?.state ?: "Sin envíos",diagnostic,bank,config,templates,e?.ranking().orEmpty(),e?.history.orEmpty(),transcript.toList(),games,detected?.let { Adapters.forPackage(it.pkg)?.titles(it)?.map { n->n.text } }.orEmpty())
+        view=AppView(repository!=null,service!=null,mode,e?.status ?: idle,e?.round ?: 0,e?.plan?.size ?: config.rounds,e?.remaining() ?: 0,e?.active==true,e?.paused==true,e?.uncertain==true,binding?.title ?: if(mode=="Simulación") "Chat local de simulación" else "Sin chat confirmado",field,sender?.state ?: "Sin envíos",diagnostic,bank,config,templates,e?.ranking().orEmpty(),e?.history.orEmpty(),transcript.toList(),games,detected?.let { Adapters.forPackage(it.pkg)?.titles(it)?.map { n->n.text } }.orEmpty(), diagLog.toList())
         if(!posted) { posted=true; main.post { posted=false; val latest=view; listeners.forEach { it(latest) }; service?.panel?.update(latest); notification(latest) } }
     }
     private var notificationKey=""

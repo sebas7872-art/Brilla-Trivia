@@ -120,4 +120,75 @@ class CoreTest {
         assertTrue(r.first().points > r[1].points)
     }
 
+
+    // --- Adapter / Tracker tests with synthetic snapshots ---
+    private fun node(path: String, id: String, text: String, y: Int = 100, parent: String? = null, type: String = "TextView") =
+        UiNode(path, parent, id, text, "", type, false, false, true, false, y)
+
+    @Test fun adapterDoesNotAttributeNewMessageToOldSender() {
+        // Old message from Melina (higher up), new message from Ayelén (own, no name)
+        val old = node("0/1", "message_text", "hola", y=200, parent="0")
+        val oldName = node("0/2", "sender_name", "Melina", y=190, parent="0")
+        val newBody = node("0/5", "message_text", "Pacifico", y=600, parent="0/4")
+        val frame = Frame("com.zhiliaoapp.musically", 1, listOf(old, oldName, newBody, node("0/4", "message_row", "", y=580, parent="0")))
+        val msgs = Adapters.tiktok.messages(frame)
+        val pacifico = msgs.find { it.text == "Pacifico" }
+        assertNotNull(pacifico)
+        // Must NOT be attributed to Melina
+        assertTrue(pacifico!!.sender != "Melina")
+        // If not reliably own, reliable should be false so it doesn't score under wrong name
+        if (pacifico.sender == null && !pacifico.own) assertFalse(pacifico.reliable)
+    }
+
+    @Test fun threeSameTextDifferentSendersAreDistinct() {
+        val m1 = node("a/1", "message_text", "7", y=100, parent="a")
+        val n1 = node("a/2", "sender_name", "Yamila", y=90, parent="a")
+        val m2 = node("b/1", "message_text", "7", y=300, parent="b")
+        val n2 = node("b/2", "sender_name", "Melina", y=290, parent="b")
+        val m3 = node("c/1", "message_text", "7", y=500, parent="c")
+        val n3 = node("c/2", "sender_name", "Ayelén", y=490, parent="c")
+        val frame = Frame("com.zhiliaoapp.musically", 1, listOf(m1,n1,m2,n2,m3,n3,
+            node("a","message_row","",80,"root"), node("b","message_row","",280,"root"), node("c","message_row","",480,"root")))
+        val msgs = Adapters.tiktok.messages(frame)
+        val sevens = msgs.filter { it.text == "7" && it.reliable }
+        assertEquals(3, sevens.size)
+        assertEquals(setOf("Yamila","Melina","Ayelén"), sevens.map { it.sender }.toSet())
+    }
+
+    @Test fun trackerIgnoresBaselineAndReportsOnlyNew() {
+        val tracker = MessageTracker()
+        val old = listOf(ChatMessage("id1","Melina","hola"))
+        tracker.baseline(old)
+        val after = old + ChatMessage("id2","Ayelén","Pacifico", own=true, reliable=true)
+        val fresh = tracker.poll(after)
+        assertEquals(1, fresh.size)
+        assertEquals("Pacifico", fresh[0].text)
+        // Second poll of same should return nothing
+        assertTrue(tracker.poll(after).isEmpty())
+    }
+
+    @Test fun rebaselineClearsPrevious() {
+        val tracker = MessageTracker()
+        tracker.baseline(listOf(ChatMessage("a","X","1")))
+        tracker.rebaseline(listOf(ChatMessage("b","Y","2")))
+        val fresh = tracker.poll(listOf(ChatMessage("b","Y","2"), ChatMessage("c","Z","3")))
+        assertEquals(1, fresh.size)
+        assertEquals("3", fresh[0].text)
+    }
+
+    @Test fun previousCorrectAnswerNotScoredAfterBaseline() {
+        val e = engine(GameConfig(rounds=1, answerMs=30_000, multipleWinners=true, ignoreAccents=true, hostPlays=true, hostName="Ayelén🏹"))
+        until(e, Phase.ANSWERS)
+        val tracker = MessageTracker()
+        val oldMsg = ChatMessage("old","Melina","Pacifico")
+        tracker.baseline(listOf(oldMsg))
+        val newMsg = ChatMessage("new", null, "Pacifico", own=true, reliable=true)
+        val fresh = tracker.poll(listOf(oldMsg, newMsg))
+        assertEquals(1, fresh.size)
+        assertEquals("Pacifico", fresh[0].text)
+        assertTrue(e.receive(fresh[0]))
+        assertTrue(e.scores.containsKey("Ayelén🏹"))
+        assertFalse(e.scores.containsKey("Melina"))
+    }
+
 }

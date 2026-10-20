@@ -147,6 +147,9 @@ class MainActivity:Activity() {
                 title("Diagnóstico")
                 note("Servicio: ${v.connected}\nModo: ${v.mode}\nChat: ${v.chat}\nCampo: ${v.field}\nEnvío: ${v.sender}\nEstado: ${v.status}\n${v.diagnostic}")
                 note("Solo se observan mensajes visibles y accesibles. No se guarda una copia del chat. No se adjudican puntos a remitentes ambiguos.")
+                title("Registro de mensajes (últimos)")
+                if (v.diagLog.isEmpty()) note("Todavía no hay eventos.")
+                else v.diagLog.takeLast(15).forEach { note(it) }
                 button("Actualizar") { render() }
                 button("Desactivar accesibilidad") { rt.stopNow(); rt.service?.disableSelf() }
                 button("Eliminar datos locales") { confirm("Eliminar todos los datos","Se borrarán preguntas, ajustes, plantillas y partidas.") { rt.stopNow(); (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData() } }

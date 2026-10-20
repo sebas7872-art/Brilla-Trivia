@@ -54,60 +54,77 @@ data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<St
     }
 
     fun messages(f:Frame): List<ChatMessage> {
-        val byPath=f.nodes.associateBy { it.path }
-        fun descendants(path:String)=f.nodes.filter { it.path==path || it.path.startsWith("$path/") }
-        val result=mutableListOf<ChatMessage>()
-        val seenBodies=mutableSetOf<String>()
+        val byPath = f.nodes.associateBy { it.path }
+        fun descendants(path: String) = f.nodes.filter { it.path == path || it.path.startsWith("$path/") }
+        val result = mutableListOf<ChatMessage>()
+        val usedBodies = mutableSetOf<String>()
 
+        // Primary: known text ids
         f.nodes.filter { local(it.id) in textIds && !it.editable && it.text.isNotBlank() }.forEach { body ->
-            var row=body; var parent=body.parent; var depth=0
-            while(parent!=null && depth++ < 5) {
-                val p=byPath[parent] ?: break
-                val children=descendants(p.path)
-                if(local(p.id) in rowIds) { row=p; break }
-                if(children.count { local(it.id) in senderIds }==1 && children.none { local(it.id) in rowIds }) row=p
-                parent=p.parent
-            }
-            val children=descendants(row.path)
-            val names=children.filter { local(it.id) in senderIds }.map { it.text.ifBlank { it.desc }.trim() }.filter { it.isNotBlank() }.distinct()
-            val own=looksOwn(row, children)
-            val safe=names.size==1 && children.count { local(it.id) in rowIds } <= 1
-            val sender=if(safe) names.single() else null
-            val stamp=children.filter { local(it.id) in setOf("date","timestamp","message_time") }.joinToString("|") { it.text }
-            val identity="${f.pkg}|${sender.orEmpty()}|$own|${body.text}|$stamp|${body.y / 40}"
-            seenBodies += body.path
-            result += ChatMessage(hash(identity),sender,body.text,own,safe || own)
+            if (body.path in usedBodies) return@forEach
+            usedBodies += body.path
+            result += extractMessage(f, body, byPath, ::descendants, strict = true)
         }
 
+        // TikTok / sparse fallback: only if primary found nothing or we are on TikTok
         if (result.isEmpty() || label == "TikTok") {
             f.nodes.filter {
                 !it.editable && it.enabled && it.text.isNotBlank() && it.text.length in 1..500 &&
-                !it.type.contains("EditText", ignoreCase=true) &&
-                !it.type.contains("Button", ignoreCase=true) &&
-                local(it.id) !in titleIds &&
-                it.y > 80
+                !it.type.contains("EditText", ignoreCase = true) &&
+                !it.type.contains("Button", ignoreCase = true) &&
+                local(it.id) !in titleIds && it.y > 80 &&
+                it.path !in usedBodies
             }.forEach { body ->
-                if (body.path in seenBodies) return@forEach
-                var row = body
-                var parent = body.parent
-                var depth = 0
-                while (parent != null && depth++ < 6) {
-                    val p = byPath[parent] ?: break
-                    row = p
-                    parent = p.parent
-                }
-                val children = descendants(row.path)
-                val own = looksOwn(row, children) || looksOwn(body, children)
-                val stamp = children.filter { localLower(it.id).contains("time") || localLower(it.id).contains("date") }.joinToString("|") { it.text }
-                val identity = "${f.pkg}|fallback|$own|${body.text}|$stamp|${body.y / 40}"
-                seenBodies += body.path
-                val names = children.filter { local(it.id) in senderIds || localLower(it.id).contains("name") || localLower(it.id).contains("nick") }
-                    .map { it.text.ifBlank { it.desc }.trim() }.filter { it.isNotBlank() && it != body.text }.distinct()
-                val safe = own || names.size == 1
-                result += ChatMessage(hash(identity), if (names.size == 1) names.single() else null, body.text, own, safe)
+                if (body.path in usedBodies) return@forEach
+                usedBodies += body.path
+                result += extractMessage(f, body, byPath, ::descendants, strict = false)
             }
         }
         return result.distinctBy { it.id }
+    }
+
+    private fun extractMessage(
+        f: Frame, body: UiNode,
+        byPath: Map<String, UiNode>,
+        descendants: (String) -> List<UiNode>,
+        strict: Boolean
+    ): ChatMessage {
+        // Walk up looking for a tight message container
+        var container = body
+        var parent = body.parent
+        var depth = 0
+        var bestContainer = body
+        while (parent != null && depth++ < 5) {
+            val p = byPath[parent] ?: break
+            val kids = descendants(p.path)
+            val hasSender = kids.any { local(it.id) in senderIds || localLower(it.id).contains("name") || localLower(it.id).contains("nick") }
+            val isRow = local(p.id) in rowIds || kids.size in 2..12
+            if (isRow && (hasSender || looksOwn(p, kids))) {
+                bestContainer = p
+                break
+            }
+            if (kids.size > 20) break // too broad, stop
+            container = p
+            parent = p.parent
+        }
+        val children = descendants(bestContainer.path)
+        val own = looksOwn(bestContainer, children) || looksOwn(body, children)
+        // Sender names only from nodes that are close to the body (similar y, or known sender ids)
+        val nameCandidates = children.filter {
+            (local(it.id) in senderIds || localLower(it.id).contains("name") || localLower(it.id).contains("nick")) &&
+            it.text.isNotBlank() && it.text != body.text &&
+            kotlin.math.abs(it.y - body.y) < 180
+        }.map { it.text.ifBlank { it.desc }.trim() }.filter { it.isNotBlank() }.distinct()
+
+        val sender = if (nameCandidates.size == 1 && !own) nameCandidates.single() else null
+        val reliable = when {
+            own -> true // strong own signal
+            sender != null && nameCandidates.size == 1 -> true
+            else -> false
+        }
+        // Identity independent of y: text + sender/own + package. MessageTracker handles "newness".
+        val identity = "${f.pkg}|${sender ?: if (own) "OWN" else "UNK"}|${body.text.trim()}"
+        return ChatMessage(hash(identity), sender, body.text, own, reliable)
     }
 
     fun diagnosticSummary(f: Frame, expectedText: String? = null): String {
@@ -133,14 +150,19 @@ object Adapters {
     fun forPackage(pkg:String)=all.firstOrNull { pkg in it.packages }
 }
 class MessageTracker {
-    private val seen=linkedSetOf<String>(); private var previous=emptySet<String>(); private var initialized=false
-    fun baseline(messages:List<ChatMessage>) { seen.clear(); seen.addAll(messages.map { it.id }); previous=seen.toSet(); initialized=true }
-    fun poll(messages:List<ChatMessage>):List<ChatMessage> {
-        if(!initialized) { baseline(messages); return emptyList() }
-        val fresh=messages.filter { it.id !in seen }
+    private val seen = linkedSetOf<String>()
+    private var initialized = false
+    fun baseline(messages: List<ChatMessage>) {
+        seen.clear()
+        seen.addAll(messages.map { it.id })
+        initialized = true
+    }
+    fun poll(messages: List<ChatMessage>): List<ChatMessage> {
+        if (!initialized) { baseline(messages); return emptyList() }
+        val fresh = messages.filter { it.id !in seen }
         seen.addAll(fresh.map { it.id })
-        previous = messages.map { it.id }.toSet()
-        if(seen.size>16384) throw IllegalStateException("Demasiados mensajes para deduplicar con seguridad.")
+        if (seen.size > 16384) throw IllegalStateException("Demasiados mensajes para deduplicar con seguridad.")
         return fresh.distinctBy { it.id }
     }
+    fun rebaseline(messages: List<ChatMessage>) { baseline(messages) }
 }

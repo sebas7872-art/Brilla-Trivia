@@ -96,7 +96,7 @@ class MainActivity:Activity() {
                 val quick=LinearLayout(this); listOf(10,20,30,50).forEach { n -> quick.addView(Style.button(this,n.toString()) { rounds.setText(n.toString()) }.apply { layoutParams=LinearLayout.LayoutParams(0,-2,1f) }) }; content.addView(quick)
                 val time=number("Segundos para responder (10, 20, 30 u otro entre 1–300)",c.answerMs/1000)
                 val gap=number("Segundos entre preguntas (0–300)",c.intervalMs/1000)
-                val points=number("Puntos máximos de referencia (1–100)",c.points.toLong())
+                val points=number("Puntos máximos por respuesta (1–100, default 15)",c.points.toLong())
                 val send=number("Segundos mínimos entre publicaciones (2–60)",c.sendIntervalMs/1000)
                 val length=number("Máximo de caracteres por publicación (100–4000)",c.messageLength.toLong())
                 val random=check("Orden aleatorio",c.random); val repeat=check("Repetir preguntas al agotar el banco",c.repeat)
@@ -110,7 +110,7 @@ class MainActivity:Activity() {
                         val err=updated.error(); if(err!=null) toast(err) else rt.database({ it.save(updated); "Configuración guardada." }) { toast(it); render() }
                     } catch(_:Exception) { toast("Revisá los números ingresados.") }
                 }
-                note("La puntuación depende de la velocidad: más rápido, más puntos (máximo 15, mínimo 1).")
+                note("La puntuación depende de la velocidad: más rápido, más puntos (máximo el valor de arriba, mínimo 1). Por defecto 15.")
             }
             "Mensajes y anuncios" -> {
                 title("Tu estilo, tus anuncios")

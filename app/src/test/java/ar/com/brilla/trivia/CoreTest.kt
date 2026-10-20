@@ -65,4 +65,59 @@ class CoreTest {
         val e=engine(); until(e,Phase.ANSWERS); time += 2000; answer(e); e.pause("test"); e.resume(); assertFalse(answer(e,"again"))
         assertEquals(1, e.scores.size)
     }
+
+    @Test fun realCaseMelinaYamilaAyelénAllScoreIndependently() {
+        val c = GameConfig(rounds=1, hostPlays=true, hostName="Ayelén🏹", multipleWinners=true, ignoreAccents=true, answerMs=30_000, points=15, random=false)
+        val e = engine(c)
+        until(e, Phase.ANSWERS)
+        // Melina early
+        time += 1500
+        assertTrue(e.receive(ChatMessage("id-melina", "Melina", "Paris")))
+        val melina = e.scores["Melina"]!!
+        // Yamila later, with accent
+        time += 7000
+        assertTrue(e.receive(ChatMessage("id-yamila", "Yamila Paez", "París")))
+        val yamila = e.scores["Yamila Paez"]!!
+        // Ayelén manual own message
+        time += 6000
+        assertTrue(e.receive(ChatMessage("id-ayelen", null, "Paris", own=true, reliable=true)))
+        val ayelen = e.scores["Ayelén🏹"]!!
+        assertEquals(3, e.scores.size)
+        assertTrue(melina > yamila)
+        assertTrue(yamila > ayelen)
+        assertTrue(melina in 10..15)
+        assertTrue(ayelen >= 1)
+        // No duplicates
+        assertFalse(e.receive(ChatMessage("id-melina-2", "Melina", "Paris")))
+        assertEquals(melina, e.scores["Melina"])
+        assertEquals(setOf("Melina", "Yamila Paez", "Ayelén🏹"), e.scores.keys)
+    }
+    @Test fun automaticNeverScoresEvenIfOwn() {
+        val e = engine(GameConfig(rounds=1, hostPlays=true, hostName="Ayelén🏹", answerMs=30_000, points=15))
+        until(e, Phase.ANSWERS)
+        // The time announcement is already marked as auto
+        assertFalse(e.receive(ChatMessage("auto1", null, "⏳ ¡Tienen 30 segundos!", own=true, reliable=true)))
+        assertTrue(e.scores.isEmpty())
+    }
+    @Test fun lateAndWrongDoNotScore() {
+        val e = engine(GameConfig(rounds=1, answerMs=10_000, points=15))
+        until(e, Phase.ANSWERS)
+        assertFalse(e.receive(ChatMessage("w", "Pedro", "Londres")))
+        time += e.remaining() + 50
+        assertFalse(e.receive(ChatMessage("l", "Pedro", "París")))
+        assertTrue(e.scores.isEmpty())
+    }
+    @Test fun rankingAccumulatesAcrossRounds() {
+        val e = engine(GameConfig(rounds=2, random=false, answerMs=10_000, points=15, multipleWinners=true))
+        until(e, Phase.ANSWERS)
+        time += 1000; e.receive(ChatMessage("1", "Melina", "París"))
+        time += 3000; e.receive(ChatMessage("2", "Yamila", "París"))
+        time += e.remaining(); e.tick()
+        until(e, Phase.ANSWERS)
+        time += 500; e.receive(ChatMessage("3", "Melina", "París"))
+        val r = e.ranking()
+        assertEquals("Melina", r.first().name)
+        assertTrue(r.first().points > r[1].points)
+    }
+
 }

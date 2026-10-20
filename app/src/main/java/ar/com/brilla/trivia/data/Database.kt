@@ -32,7 +32,7 @@ object Json {
         .put("multipleWinners",c.multipleWinners).put("showRanking",c.showRanking).put("rankingSize",c.rankingSize).put("ignoreAccents",c.ignoreAccents)
         .put("sendIntervalMs",c.sendIntervalMs).put("messageLength",c.messageLength)
         .put("hostPlays",c.hostPlays).put("hostName",c.hostName)
-    fun config(j: JSONObject): GameConfig = GameConfig(j.optInt("rounds",10),j.optLong("answerMs",10000),j.optLong("intervalMs",5000),j.optInt("points",1),j.optBoolean("random",true),j.optBoolean("repeat",true),j.optBoolean("randomCycles",true),j.optBoolean("exhaustFirst",true),j.optBoolean("multipleWinners",true),j.optBoolean("showRanking",true),j.optInt("rankingSize",10),j.optBoolean("ignoreAccents",true),j.optLong("sendIntervalMs",3000),j.optInt("messageLength",500),j.optBoolean("hostPlays",false),j.optString("hostName","Ayelén🏹"))
+    fun config(j: JSONObject): GameConfig = GameConfig(j.optInt("rounds",10),j.optLong("answerMs",10000),j.optLong("intervalMs",5000),j.optInt("points",15),j.optBoolean("random",true),j.optBoolean("repeat",true),j.optBoolean("randomCycles",true),j.optBoolean("exhaustFirst",true),j.optBoolean("multipleWinners",true),j.optBoolean("showRanking",true),j.optInt("rankingSize",10),j.optBoolean("ignoreAccents",true),j.optLong("sendIntervalMs",3000),j.optInt("messageLength",500),j.optBoolean("hostPlays",false),j.optString("hostName","Ayelén🏹"))
     fun strings(a: JSONArray): List<String> = (0 until a.length()).map { a.getString(it) }
     fun templates(ts: List<Template>): JSONArray = JSONArray(ts.map { JSONObject().put("key",it.key).put("text",it.text).put("enabled",it.enabled).put("order",it.order) })
     fun templates(a: JSONArray): List<Template> {

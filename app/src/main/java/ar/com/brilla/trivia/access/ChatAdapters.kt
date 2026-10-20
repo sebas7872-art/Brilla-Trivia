@@ -46,9 +46,11 @@ data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<St
     private fun looksOwn(node: UiNode, children: List<UiNode>): Boolean {
         if (children.any { local(it.id) in ownIds }) return true
         if (node.desc.startsWith("Tú: ") || node.desc.startsWith("You: ")) return true
-        val blob = (node.id + " " + node.desc + " " + children.joinToString(" ") { it.id + " " + it.desc }).lowercase()
-        return listOf("outgoing", "message_out", "msg_out", "self", "mine", "sent_by_me", "is_me", "own_message").any { it in blob }
-            || listOf("tú", "tu:", "you:", "me:").any { it in node.desc.lowercase() }
+        val blob = (node.id + " " + node.desc + " " + node.type + " " + children.joinToString(" ") { it.id + " " + it.desc + " " + it.type }).lowercase()
+        val ownKeywords = listOf("outgoing", "message_out", "msg_out", "self", "mine", "sent_by_me", "is_me", "own_message", "from_me", "is_outgoing", "right_message", "my_message")
+        if (ownKeywords.any { it in blob }) return true
+        if (listOf("tú", "tu:", "you:", "me:").any { it in node.desc.lowercase() }) return true
+        return false
     }
 
     fun messages(f:Frame): List<ChatMessage> {
@@ -72,7 +74,7 @@ data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<St
             val safe=names.size==1 && children.count { local(it.id) in rowIds } <= 1
             val sender=if(safe) names.single() else null
             val stamp=children.filter { local(it.id) in setOf("date","timestamp","message_time") }.joinToString("|") { it.text }
-            val identity="${f.pkg}|${sender.orEmpty()}|$own|${body.text}|$stamp|${body.path}"
+            val identity="${f.pkg}|${sender.orEmpty()}|$own|${body.text}|$stamp|${body.y / 40}"
             seenBodies += body.path
             result += ChatMessage(hash(identity),sender,body.text,own,safe || own)
         }
@@ -97,7 +99,7 @@ data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<St
                 val children = descendants(row.path)
                 val own = looksOwn(row, children) || looksOwn(body, children)
                 val stamp = children.filter { localLower(it.id).contains("time") || localLower(it.id).contains("date") }.joinToString("|") { it.text }
-                val identity = "${f.pkg}|fallback|$own|${body.text}|$stamp|${body.path}"
+                val identity = "${f.pkg}|fallback|$own|${body.text}|$stamp|${body.y / 40}"
                 seenBodies += body.path
                 val names = children.filter { local(it.id) in senderIds || localLower(it.id).contains("name") || localLower(it.id).contains("nick") }
                     .map { it.text.ifBlank { it.desc }.trim() }.filter { it.isNotBlank() && it != body.text }.distinct()
@@ -135,9 +137,9 @@ class MessageTracker {
     fun baseline(messages:List<ChatMessage>) { seen.clear(); seen.addAll(messages.map { it.id }); previous=seen.toSet(); initialized=true }
     fun poll(messages:List<ChatMessage>):List<ChatMessage> {
         if(!initialized) { baseline(messages); return emptyList() }
-        val ids=messages.map { it.id }.toSet()
-        val fresh=messages.filter { it.id in previous && it.id !in seen }
-        seen.addAll(fresh.map { it.id }); previous=ids
+        val fresh=messages.filter { it.id !in seen }
+        seen.addAll(fresh.map { it.id })
+        previous = messages.map { it.id }.toSet()
         if(seen.size>16384) throw IllegalStateException("Demasiados mensajes para deduplicar con seguridad.")
         return fresh.distinctBy { it.id }
     }

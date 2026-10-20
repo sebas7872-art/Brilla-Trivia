@@ -57,7 +57,7 @@ class TriviaEngine(val config: GameConfig, val plan: List<Question>, val templat
         return mapOf(
             "pregunta" to (current?.text ?: ""), "respuesta" to (current?.answers?.firstOrNull() ?: ""),
             "numero" to round.toString(), "total" to plan.size.toString(), "tiempo" to (config.answerMs/1000).toString(),
-            "puntos" to "15", "siguiente" to (round+1).toString(),
+            "puntos" to config.points.toString(), "siguiente" to (round+1).toString(),
             "cantidad_acertantes" to winners.size.toString(),
             "acertantes" to acertantes,
             "clasificacion" to (ranked.joinToString("\n") { style("score_line","{posicion}. {nombre}: {puntos}",mapOf("nombre" to it.name,"posicion" to it.rank.toString(),"puntos" to it.points.toString())) }.ifEmpty { "Todavía no hay puntos." }),
@@ -114,7 +114,8 @@ class TriviaEngine(val config: GameConfig, val plan: List<Question>, val templat
     private fun speedPoints(): Int {
         val total = config.answerMs.coerceAtLeast(1)
         val left = remaining().coerceAtLeast(0)
-        return max(1, ceil(15.0 * left / total).toInt())
+        val maxPts = config.points.coerceIn(1, 100)
+        return max(1, ceil(maxPts.toDouble() * left / total).toInt()).coerceAtMost(maxPts)
     }
     fun receive(message: ChatMessage): Boolean {
         if (paused || phase != Phase.ANSWERS || clock() >= deadline) return false

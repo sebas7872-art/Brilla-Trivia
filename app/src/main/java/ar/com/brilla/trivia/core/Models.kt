@@ -6,7 +6,7 @@ import java.util.Locale
 data class Question(val id: Long, val text: String, val answers: List<String>)
 data class GameConfig(
     val rounds: Int = 10, val answerMs: Long = 10_000, val intervalMs: Long = 5_000,
-    val points: Int = 1, val random: Boolean = true, val repeat: Boolean = true,
+    val points: Int = 15, val random: Boolean = true, val repeat: Boolean = true,
     val randomCycles: Boolean = true, val exhaustFirst: Boolean = true,
     val multipleWinners: Boolean = true, val showRanking: Boolean = true,
     val rankingSize: Int = 10, val ignoreAccents: Boolean = true,

@@ -147,8 +147,14 @@ class AppRuntime(private val context:Context) {
                 field="Campo editable disponible"
                 val messages=a!!.messages(it.frame)
                 tracker.poll(messages).forEach { m ->
-                    if(!m.own) diagnostic=if(m.reliable) "Último mensaje reconocido · ${m.sender}: ${m.text.take(80)}" else "Mensaje con remitente ambiguo; no puntuó."
-                    e.receive(m)
+                    val scored = e.receive(m)
+                    diagnostic = when {
+                        scored -> "Puntuó · ${if(m.own) config.hostName else m.sender}: ${m.text.take(60)}"
+                        m.own && !m.reliable -> "Mensaje propio de origen incierto; no puntuó."
+                        m.own && !config.hostPlays -> "Mensaje propio (anfitriona no juega); no puntuó."
+                        !m.reliable -> "Mensaje con remitente ambiguo; no puntuó."
+                        else -> "Mensaje visto · ${m.sender ?: "sin remitente"}: ${m.text.take(60)}"
+                    }
                 }
                 seenPhase=e.phase
             }

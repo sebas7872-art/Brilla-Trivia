@@ -50,9 +50,19 @@ class AutomaticSender(private val reader:TreeReader,private val handler:Handler,
             val args=Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,p.text) }
             if(!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,args)) { finish(false,"La aplicación no permite escribir mediante accesibilidad."); return@read }
             state="Verificando el texto"
-            handler.postDelayed({
+            fun verifyAndSend(attempt:Int) {
                 read next@{ fresh,adapter ->
-                    if(adapter.field(fresh.frame,b)?.text!=p.text) { finish(false,"El texto introducido no coincide. No se envió."); return@next }
+                    val current = adapter.field(fresh.frame,b)?.text.orEmpty()
+                    // Accept exact match or (after a short delay) empty field if the UI cleared the draft after accepting the text
+                    val matches = current == p.text || (current.isEmpty() && attempt > 0)
+                    if(!matches) {
+                        if(attempt < 2) {
+                            handler.postDelayed({ verifyAndSend(attempt+1) }, 220)
+                            return@next
+                        }
+                        finish(false,"El texto introducido no coincide. No se envió.")
+                        return@next
+                    }
                     val send=adapter.send(fresh.frame)
                     if(send==null) { finish(false,"No se encontró un único botón Enviar accesible."); return@next }
                     if(!safe()) { finish(false,"Envío detenido antes de pulsar Enviar."); return@next }
@@ -60,7 +70,8 @@ class AutomaticSender(private val reader:TreeReader,private val handler:Handler,
                     if(!fresh.handles[send.path]!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)) finish(false,"La acción Enviar fue rechazada.")
                     else handler.postDelayed({ receipt() },200)
                 }
-            },180)
+            }
+            handler.postDelayed({ verifyAndSend(0) }, 320)
         }
     }
 }

@@ -85,10 +85,19 @@ class AppRuntime(private val context:Context) {
         s.use {
             val a=Adapters.forPackage(it.frame.pkg)
             if(a==null || a.label!=mode) { main.post { done(emptyList(),"Abrí el chat de $mode y tocá su campo de escritura.") }; return@use }
-            val focused=a.fields(it.frame).filter { it.focused }
-            val fields=if(focused.size==1) focused else a.fields(it.frame)
-            val titles=a.titles(it.frame)
-            if(fields.size!=1 || titles.isEmpty()) { main.post { done(emptyList(),"NO SE DETECTÓ EL CAMPO O EL TÍTULO DEL CHAT. Volvé a tocar el campo; la app debe exponerlo a accesibilidad.") }; return@use }
+            val candidates = a.candidateFields(it.frame)
+            val focused = candidates.filter { it.focused }
+            val fields = if (focused.size == 1) focused else candidates
+            val titles = a.titles(it.frame)
+            if (fields.isEmpty() || titles.isEmpty()) {
+                main.post { done(emptyList(), "NO SE DETECTÓ EL CAMPO O EL TÍTULO DEL CHAT. Volvé a tocar el campo; la app debe exponerlo a accesibilidad.") }
+                return@use
+            }
+            val chosen = if (fields.size == 1) fields.single() else focused.singleOrNull()
+            if (chosen == null) {
+                main.post { done(emptyList(), "Hay varios campos editables. Tocá el de escritura del chat y volvé a detectar.") }
+                return@use
+            }
             detected=it.frame; val names=titles.map { n->n.text }; idle="Confirmá el grupo detectado"; publish()
             main.post { done(names,"Confirmá el destino. No selecciones chats con el mismo nombre.") }
         }
@@ -99,7 +108,7 @@ class AppRuntime(private val context:Context) {
         current.use { s ->
             val a=Adapters.forPackage(s.frame.pkg)
             val t=a?.titles(s.frame)?.singleOrNull { it.text==title }
-            val fields=a?.fields(s.frame).orEmpty(); val f=fields.singleOrNull { it.focused } ?: fields.singleOrNull()
+            val fields=a?.candidateFields(s.frame).orEmpty(); val f=fields.singleOrNull { it.focused } ?: fields.singleOrNull()
             if(a==null || a.label!=mode || s.frame.pkg!=old.pkg || t==null || f==null) { main.post { done("La ventana cambió; volvé a detectar.") }; return@use }
             val b=Binding(s.frame.pkg,t.id,t.text,f.id,f.type,s.frame.window)
             val prior=binding
@@ -117,9 +126,10 @@ class AppRuntime(private val context:Context) {
         if(templates.none { it.key=="question" && it.enabled && it.text.isNotBlank() }) { idle="Activá una plantilla de pregunta antes de jugar."; publish(); return@post }
         if(mode!="Simulación") {
             val err=verify(); if(err!=null) { idle=err; publish(); return@post }
+            // Ya no exigimos un mensaje previo de otro participante para iniciar.
+            // Solo se necesita el chat confirmado; los participantes se identifican cuando responden.
             reader?.read()?.use { s ->
                 val messages=Adapters.forPackage(s.frame.pkg)!!.messages(s.frame)
-                if(messages.none { !it.own && it.reliable && it.sender!=null }) { idle="No se puede verificar la lectura de participantes. Pedí un mensaje de prueba en el grupo."; publish(); return@post }
                 tracker.baseline(messages)
             }
         }
@@ -147,7 +157,7 @@ class AppRuntime(private val context:Context) {
         }
         val p=e.tick()
         if(p!=null) {
-            save() // Persist uncertainty BEFORE any external action.
+            save()
             if(mode=="Simulación") { transcript.addLast(p.text); while(transcript.size>150) transcript.removeFirst(); e.acknowledge(p.id,true) }
             else {
                 val b=binding; val s=sender

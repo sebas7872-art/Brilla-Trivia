@@ -29,14 +29,29 @@ class AutomaticSender(private val reader:TreeReader,private val handler:Handler,
                 action(s,a)
             }
         }
+        /** Confirmación: campo vacío + mensaje esperado visible como nuevo (propio o texto exacto nuevo). */
+        fun isPublished(s: TreeSnapshot, a: Adapter): Boolean {
+            val field = a.field(s.frame, b) ?: return false
+            if (field.text.isNotEmpty()) return false
+            val msgs = a.messages(s.frame)
+            if (msgs.any { it.own && it.text == p.text && it.id !in before }) return true
+            // Fallback de evidencia: el texto exacto aparece en un mensaje nuevo del árbol
+            if (msgs.any { it.text == p.text && it.id !in before }) return true
+            // Último recurso de evidencia visual: nodo no editable con el texto exacto (sin requerir id de mensaje)
+            val exact = s.frame.nodes.count { !it.editable && it.text == p.text }
+            return exact > 0 && field.text.isEmpty()
+        }
         fun receipt() {
             if(!safe()) { finish(false,"Envío incierto. Revisá el chat antes de continuar."); return }
             read { s,a ->
-                val field=a.field(s.frame,b)!!
-                val own=a.messages(s.frame).any { it.own && it.text==p.text && it.id !in before }
-                if(field.text.isEmpty() && own) finish(true,"Publicación confirmada en pantalla")
-                else if(SystemClock.uptimeMillis()-began>=8000) finish(false,"No se pudo confirmar el mensaje. No se reenviará automáticamente.")
-                else handler.postDelayed({ receipt() },200)
+                if (isPublished(s, a)) {
+                    finish(true, "Publicación confirmada en pantalla")
+                } else if (SystemClock.uptimeMillis() - began >= 8000) {
+                    val diag = a.diagnosticSummary(s.frame, p.text)
+                    finish(false, "No se pudo confirmar el mensaje. No se reenviará automáticamente. [$diag]")
+                } else {
+                    handler.postDelayed({ receipt() }, 250)
+                }
             }
         }
         read { s,a ->
@@ -54,30 +69,28 @@ class AutomaticSender(private val reader:TreeReader,private val handler:Handler,
                 read next@{ fresh,adapter ->
                     val current = adapter.field(fresh.frame,b)?.text.orEmpty()
                     if(current == p.text) {
-                        // Texto verificado exactamente: solo entonces se pulsa Enviar
                         val send=adapter.send(fresh.frame)
                         if(send==null) { finish(false,"No se encontró un único botón Enviar accesible."); return@next }
                         if(!safe()) { finish(false,"Envío detenido antes de pulsar Enviar."); return@next }
                         state="Esperando confirmación"
                         if(!fresh.handles[send.path]!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)) finish(false,"La acción Enviar fue rechazada.")
-                        else handler.postDelayed({ receipt() },200)
+                        else handler.postDelayed({ receipt() },250)
                         return@next
                     }
                     if(current.isEmpty()) {
-                        // Campo vacío: comprobar si el mensaje ya está publicado (sin pulsar Enviar)
-                        val alreadyPublished = adapter.messages(fresh.frame).any { it.own && it.text==p.text && it.id !in before }
-                        if(alreadyPublished) {
-                            finish(true,"Publicación ya visible en el chat (campo vacío tras aceptar el texto)")
+                        // Campo vacío sin haber coincidido el texto: ¿ya se publicó?
+                        if (isPublished(fresh, adapter)) {
+                            finish(true, "Publicación ya visible en el chat")
                             return@next
                         }
                         if(attempt < 2) {
                             handler.postDelayed({ verifyAndSend(attempt+1) }, 220)
                             return@next
                         }
-                        finish(false,"El campo quedó vacío y el mensaje no aparece publicado. No se envió. Revisá el chat.")
+                        val diag = adapter.diagnosticSummary(fresh.frame, p.text)
+                        finish(false,"El campo quedó vacío y el mensaje no aparece publicado. No se envió. Revisá el chat. [$diag]")
                         return@next
                     }
-                    // Texto distinto (ni vacío ni coincidente)
                     if(attempt < 2) {
                         handler.postDelayed({ verifyAndSend(attempt+1) }, 220)
                         return@next

@@ -9,6 +9,7 @@ data class Binding(val pkg: String,val titleId: String,val title: String,val fie
 data class Detected(val binding: Binding?,val reason: String,val titles: List<UiNode>,val field: UiNode?)
 data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<String>,val textIds:Set<String>,val senderIds:Set<String>,val rowIds:Set<String>,val ownIds:Set<String>,val sendIds:Set<String>) {
     private fun local(id:String)=id.substringAfterLast('/')
+    private fun localLower(id:String)=local(id).lowercase()
     fun titles(f:Frame): List<UiNode> {
         val byId = f.nodes.filter { local(it.id) in titleIds && it.text.isNotBlank() && !it.editable }
         if (byId.isNotEmpty()) return byId.distinctBy { it.id to it.text }
@@ -41,10 +42,23 @@ data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<St
         if(known.isNotEmpty()) return null
         return f.nodes.filter { it.enabled && it.clickable && (it.desc.trim().lowercase() in setOf("enviar","send","enviar mensaje","send message")) }.singleOrNull()
     }
+
+    /** Heurística segura de mensaje propio sin inventar resource-ids. */
+    private fun looksOwn(node: UiNode, children: List<UiNode>): Boolean {
+        if (children.any { local(it.id) in ownIds }) return true
+        if (node.desc.startsWith("Tú: ") || node.desc.startsWith("You: ")) return true
+        val blob = (node.id + " " + node.desc + " " + children.joinToString(" ") { it.id + " " + it.desc }).lowercase()
+        return listOf("outgoing", "message_out", "msg_out", "self", "mine", "sent_by_me", "is_me", "own_message").any { it in blob }
+            || listOf("tú", "tu:", "you:", "me:").any { it in node.desc.lowercase() }
+    }
+
     fun messages(f:Frame): List<ChatMessage> {
         val byPath=f.nodes.associateBy { it.path }
         fun descendants(path:String)=f.nodes.filter { it.path==path || it.path.startsWith("$path/") }
         val result=mutableListOf<ChatMessage>()
+        val seenBodies=mutableSetOf<String>()
+
+        // 1) Camino principal por resource-id conocidos
         f.nodes.filter { local(it.id) in textIds && !it.editable && it.text.isNotBlank() }.forEach { body ->
             var row=body; var parent=body.parent; var depth=0
             while(parent!=null && depth++ < 5) {
@@ -56,14 +70,63 @@ data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<St
             }
             val children=descendants(row.path)
             val names=children.filter { local(it.id) in senderIds }.map { it.text.ifBlank { it.desc }.trim() }.filter { it.isNotBlank() }.distinct()
-            val own=children.any { local(it.id) in ownIds } || row.desc.startsWith("Tú: ") || row.desc.startsWith("You: ")
+            val own=looksOwn(row, children)
             val safe=names.size==1 && children.count { local(it.id) in rowIds } <= 1
             val sender=if(safe) names.single() else null
             val stamp=children.filter { local(it.id) in setOf("date","timestamp","message_time") }.joinToString("|") { it.text }
-            val identity="${f.pkg}|${sender.orEmpty()}|$own|${body.text}|$stamp"
+            val identity="${f.pkg}|${sender.orEmpty()}|$own|${body.text}|$stamp|${body.path}"
+            seenBodies += body.text to body.path
             result += ChatMessage(hash(identity),sender,body.text,own,safe || own)
         }
-        return result
+
+        // 2) Fallback: nodos de texto no editables cuando el árbol no expone los ids esperados (p.ej. TikTok)
+        if (result.isEmpty() || label == "TikTok") {
+            f.nodes.filter {
+                !it.editable && it.enabled && it.text.isNotBlank() && it.text.length in 1..500 &&
+                !it.type.contains("EditText", ignoreCase=true) &&
+                !it.type.contains("Button", ignoreCase=true) &&
+                local(it.id) !in titleIds &&
+                it.y > 80
+            }.forEach { body ->
+                val key = body.text to body.path
+                if (key in seenBodies) return@forEach
+                var row = body
+                var parent = body.parent
+                var depth = 0
+                while (parent != null && depth++ < 6) {
+                    val p = byPath[parent] ?: break
+                    row = p
+                    parent = p.parent
+                }
+                val children = descendants(row.path)
+                val own = looksOwn(row, children) || looksOwn(body, children)
+                val stamp = children.filter { localLower(it.id).contains("time") || localLower(it.id).contains("date") }.joinToString("|") { it.text }
+                val identity = "${f.pkg}|fallback|$own|${body.text}|$stamp|${body.path}"
+                seenBodies += key
+                // reliable solo si parece propio o tiene un único remitente claro
+                val names = children.filter { local(it.id) in senderIds || localLower(it.id).contains("name") || localLower(it.id).contains("nick") }
+                    .map { it.text.ifBlank { it.desc }.trim() }.filter { it.isNotBlank() && it != body.text }.distinct()
+                val safe = own || names.size == 1
+                result += ChatMessage(hash(identity), if (names.size == 1) names.single() else null, body.text, own, safe)
+            }
+        }
+        return result.distinctBy { it.id }
+    }
+
+    /** Resumen seguro del árbol para diagnóstico (sin textos de terceros ni datos personales). */
+    fun diagnosticSummary(f: Frame, expectedText: String? = null): String {
+        val editables = f.nodes.count { it.editable && it.enabled }
+        val clickableSend = f.nodes.count { it.clickable && it.enabled && (local(it.id) in sendIds || it.desc.trim().lowercase() in setOf("enviar","send","enviar mensaje","send message")) }
+        val idSamples = f.nodes.asSequence()
+            .filter { it.id.isNotBlank() }
+            .map { local(it.id) }
+            .distinct()
+            .take(20)
+            .joinToString(",")
+        val exactMatches = if (expectedText != null) f.nodes.count { !it.editable && it.text == expectedText } else -1
+        val msgCount = messages(f).size
+        val ownCount = messages(f).count { it.own }
+        return "pkg=${f.pkg.take(40)} editables=$editables sendBtns=$clickableSend msgs=$msgCount own=$ownCount exact=${if (exactMatches >= 0) exactMatches else "-"} ids=[$idSamples]"
     }
 }
 fun hash(value:String)=MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }

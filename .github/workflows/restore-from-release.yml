@@ -56,7 +56,7 @@ jobs:
           set -e
           mkdir -p /tmp/extracted
           unzip -o "$ZIP_PATH" -d /tmp/extracted
-          # The ZIP root is usually Brilla-Trivia/
+
           SRC=$(find /tmp/extracted -type d -name "Brilla-Trivia" | head -1)
           if [ -z "$SRC" ]; then
             SRC=$(find /tmp/extracted -maxdepth 2 -type d | head -2 | tail -1)
@@ -64,8 +64,8 @@ jobs:
           echo "Source root: $SRC"
           ls -la "$SRC"
 
-          # Restore critical files exactly (overwrite incomplete ones)
-          declare -a FILES=(
+          # Lista obligatoria: si falta cualquiera, el workflow falla
+          declare -a MANDATORY=(
             "app/src/main/java/ar/com/brilla/trivia/ui/MainActivity.kt"
             "app/src/main/java/ar/com/brilla/trivia/AppRuntime.kt"
             "app/src/main/java/ar/com/brilla/trivia/data/Database.kt"
@@ -98,18 +98,25 @@ jobs:
             "app/schemas/ar.com.brilla.trivia.data.TriviaDatabase/1.json"
           )
 
-          for f in "${FILES[@]}"; do
+          MISSING=0
+          for f in "${MANDATORY[@]}"; do
             if [ -f "$SRC/$f" ]; then
               mkdir -p "$(dirname "$f")"
               cp -f "$SRC/$f" "$f"
               echo "Restored: $f ($(wc -c < "$f") bytes)"
             else
-              echo "WARNING: missing in ZIP: $f"
+              echo "ERROR: Archivo obligatorio ausente en el ZIP: $f"
+              MISSING=1
             fi
           done
 
-          # Also restore any other source files that might be incomplete
-          find "$SRC/app/src" -type f -name "*.kt" -o -name "*.xml" -o -name "*.json" | while read srcf; do
+          if [ "$MISSING" -eq 1 ]; then
+            echo "Abortando: faltan archivos obligatorios."
+            exit 1
+          fi
+
+          # Restaurar el resto de fuentes por si hubiera más
+          find "$SRC/app/src" -type f \( -name "*.kt" -o -name "*.xml" -o -name "*.json" \) | while read srcf; do
             rel=${srcf#$SRC/}
             mkdir -p "$(dirname "$rel")"
             cp -f "$srcf" "$rel"
@@ -117,27 +124,44 @@ jobs:
 
           chmod +x gradlew || true
 
-      - name: Verify key file hashes (MD5)
+      - name: Verify MD5 of the six critical files (must match original ZIP)
         run: |
           set -e
-          echo "=== MD5 of restored critical files ==="
-          md5sum \
-            app/src/main/java/ar/com/brilla/trivia/ui/MainActivity.kt \
-            app/src/main/java/ar/com/brilla/trivia/AppRuntime.kt \
-            app/src/main/java/ar/com/brilla/trivia/data/Database.kt \
-            app/src/main/java/ar/com/brilla/trivia/ui/FloatingPanel.kt \
-            app/src/androidTest/java/ar/com/brilla/trivia/DeviceTests.kt \
-            app/src/test/java/ar/com/brilla/trivia/CoreTest.kt \
-            gradle/wrapper/gradle-wrapper.jar || true
-          echo "=== Sizes ==="
-          wc -c \
-            app/src/main/java/ar/com/brilla/trivia/ui/MainActivity.kt \
-            app/src/main/java/ar/com/brilla/trivia/AppRuntime.kt \
-            app/src/main/java/ar/com/brilla/trivia/data/Database.kt \
-            app/src/main/java/ar/com/brilla/trivia/ui/FloatingPanel.kt \
-            app/src/androidTest/java/ar/com/brilla/trivia/DeviceTests.kt \
-            app/src/test/java/ar/com/brilla/trivia/CoreTest.kt \
-            gradle/wrapper/gradle-wrapper.jar || true
+          echo "Comparando MD5 con los valores originales del ZIP de Astra..."
+
+          declare -A EXPECTED=(
+            ["app/src/main/java/ar/com/brilla/trivia/ui/MainActivity.kt"]="ab0fee3c63a143b9265066cd2f192a55"
+            ["app/src/main/java/ar/com/brilla/trivia/AppRuntime.kt"]="cd56dd867bf484328457c0ecb8595e47"
+            ["app/src/main/java/ar/com/brilla/trivia/data/Database.kt"]="2f1b0cfbb44c0bcca2629a523a5703c2"
+            ["app/src/main/java/ar/com/brilla/trivia/ui/FloatingPanel.kt"]="a3946f34e4587f4793baa77b08cbe082"
+            ["app/src/androidTest/java/ar/com/brilla/trivia/DeviceTests.kt"]="61f165c49329bc988c8d350a97bb7d76"
+            ["app/src/test/java/ar/com/brilla/trivia/CoreTest.kt"]="2a41302f29c30b9d2a21ba0936394176"
+          )
+
+          FAILED=0
+          for f in "${!EXPECTED[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: Falta el archivo $f"
+              FAILED=1
+              continue
+            fi
+            ACTUAL=$(md5sum "$f" | awk '{print $1}')
+            EXPECT=${EXPECTED[$f]}
+            if [ "$ACTUAL" = "$EXPECT" ]; then
+              echo "OK  $f  ($ACTUAL)"
+            else
+              echo "MISMATCH  $f"
+              echo "  esperado: $EXPECT"
+              echo "  actual:   $ACTUAL"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo "ERROR: Uno o más archivos críticos no coinciden con el ZIP original. No se hará commit."
+            exit 1
+          fi
+          echo "Todos los hashes de los 6 archivos críticos coinciden."
 
       - name: Commit restored sources
         run: |
@@ -151,6 +175,28 @@ jobs:
             git commit -m "Restore exact original sources from release tag original-source"
             git push origin HEAD:main
           fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew || true
 
       - name: Build both debug APKs
         run: |

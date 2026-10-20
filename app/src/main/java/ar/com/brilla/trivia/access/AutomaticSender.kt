@@ -53,22 +53,36 @@ class AutomaticSender(private val reader:TreeReader,private val handler:Handler,
             fun verifyAndSend(attempt:Int) {
                 read next@{ fresh,adapter ->
                     val current = adapter.field(fresh.frame,b)?.text.orEmpty()
-                    // Accept exact match or (after a short delay) empty field if the UI cleared the draft after accepting the text
-                    val matches = current == p.text || (current.isEmpty() && attempt > 0)
-                    if(!matches) {
+                    if(current == p.text) {
+                        // Texto verificado exactamente: solo entonces se pulsa Enviar
+                        val send=adapter.send(fresh.frame)
+                        if(send==null) { finish(false,"No se encontró un único botón Enviar accesible."); return@next }
+                        if(!safe()) { finish(false,"Envío detenido antes de pulsar Enviar."); return@next }
+                        state="Esperando confirmación"
+                        if(!fresh.handles[send.path]!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)) finish(false,"La acción Enviar fue rechazada.")
+                        else handler.postDelayed({ receipt() },200)
+                        return@next
+                    }
+                    if(current.isEmpty()) {
+                        // Campo vacío: comprobar si el mensaje ya está publicado (sin pulsar Enviar)
+                        val alreadyPublished = adapter.messages(fresh.frame).any { it.own && it.text==p.text && it.id !in before }
+                        if(alreadyPublished) {
+                            finish(true,"Publicación ya visible en el chat (campo vacío tras aceptar el texto)")
+                            return@next
+                        }
                         if(attempt < 2) {
                             handler.postDelayed({ verifyAndSend(attempt+1) }, 220)
                             return@next
                         }
-                        finish(false,"El texto introducido no coincide. No se envió.")
+                        finish(false,"El campo quedó vacío y el mensaje no aparece publicado. No se envió. Revisá el chat.")
                         return@next
                     }
-                    val send=adapter.send(fresh.frame)
-                    if(send==null) { finish(false,"No se encontró un único botón Enviar accesible."); return@next }
-                    if(!safe()) { finish(false,"Envío detenido antes de pulsar Enviar."); return@next }
-                    state="Esperando confirmación"
-                    if(!fresh.handles[send.path]!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)) finish(false,"La acción Enviar fue rechazada.")
-                    else handler.postDelayed({ receipt() },200)
+                    // Texto distinto (ni vacío ni coincidente)
+                    if(attempt < 2) {
+                        handler.postDelayed({ verifyAndSend(attempt+1) }, 220)
+                        return@next
+                    }
+                    finish(false,"El texto introducido no coincide. No se envió.")
                 }
             }
             handler.postDelayed({ verifyAndSend(0) }, 320)

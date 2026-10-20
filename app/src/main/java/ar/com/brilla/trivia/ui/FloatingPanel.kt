@@ -17,7 +17,7 @@ class FloatingPanel(private val service:TriviaAccessibilityService,private val r
     fun show() {
         if(root!=null) return
         val v=Style.column(service).apply { setPadding(Style.dp(service,9),Style.dp(service,7),Style.dp(service,9),Style.dp(service,9)); background=Style.round(Style.pale,Style.dp(service,22).toFloat()); elevation=Style.dp(service,8).toFloat() }
-        val title=Style.label(service,"✦ Brilla Trivia  ·  arrastrá",13f,true)
+        val title=Style.label(service,"✦ Ayelén Trivia🏹  ·  arrastrá",13f,true)
         var sx=0f; var sy=0f; var ox=0; var oy=0
         title.setOnTouchListener { _,e -> when(e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { sx=e.rawX; sy=e.rawY; ox=params.x; oy=params.y; true }

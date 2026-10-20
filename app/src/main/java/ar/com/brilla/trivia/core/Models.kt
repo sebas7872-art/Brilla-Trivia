@@ -10,7 +10,8 @@ data class GameConfig(
     val randomCycles: Boolean = true, val exhaustFirst: Boolean = true,
     val multipleWinners: Boolean = true, val showRanking: Boolean = true,
     val rankingSize: Int = 10, val ignoreAccents: Boolean = true,
-    val sendIntervalMs: Long = 3_000, val messageLength: Int = 500
+    val sendIntervalMs: Long = 3_000, val messageLength: Int = 500,
+    val hostPlays: Boolean = false, val hostName: String = "Ayelén🏹"
 ) {
     fun error(): String? = when {
         rounds !in 1..1000 -> "Elegí entre 1 y 1000 preguntas."
@@ -20,6 +21,7 @@ data class GameConfig(
         sendIntervalMs !in 2000..60_000 -> "Separá los envíos entre 2 y 60 segundos."
         messageLength !in 100..4000 -> "El límite por mensaje debe ser de 100 a 4000 caracteres."
         rankingSize !in listOf(0,3,5,10) -> "Clasificación: completa, top 3, 5 o 10."
+        hostName.isBlank() || hostName.length > 40 -> "El nombre de la anfitriona debe tener entre 1 y 40 caracteres."
         else -> null
     }
 }
@@ -29,7 +31,7 @@ fun normalized(text: String, accents: Boolean = true): String {
 }
 data class ChatMessage(val id: String, val sender: String?, val text: String, val own: Boolean = false, val reliable: Boolean = true)
 data class Score(val name: String, val points: Int, val rank: Int)
-data class RoundResult(val number: Int, val question: String, val answer: String, val winners: List<String>)
+data class RoundResult(val number: Int, val question: String, val answer: String, val winners: List<String>, val pointsByName: Map<String, Int> = emptyMap())
 enum class Phase(val label: String) {
     WELCOME("Preparando partida"), QUESTION("Publicando pregunta"), ANSWERS("Esperando respuestas"),
     RESULT("Publicando resultados"), GAP("Próxima pregunta"), FINAL("Publicando final"),

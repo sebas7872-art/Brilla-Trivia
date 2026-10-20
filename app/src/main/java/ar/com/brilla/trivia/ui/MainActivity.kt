@@ -34,7 +34,7 @@ class MainActivity:Activity() {
     override fun onResume() { super.onResume(); if(::content.isInitialized) render() }
     private fun build() {
         val root=Style.column(this).apply { setPadding(Style.dp(this@MainActivity,18),Style.dp(this@MainActivity,12),Style.dp(this@MainActivity,18),0) }
-        root.addView(Style.label(this,"✦ Brilla Trivia",27f,true))
+        root.addView(Style.label(this,"✦ Ayelén Trivia🏹",27f,true))
         status=Style.label(this,"Preparando…",14f).also { root.addView(it) }
         val select=Spinner(this); val labels=listOf("Inicio","Preguntas y respuestas","Configuración del juego","Mensajes y anuncios","Clasificación","Simulación","Diagnóstico")
         select.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,labels)
@@ -66,12 +66,12 @@ class MainActivity:Activity() {
                 title("Tu presentadora de trivia")
                 note("Accesibilidad: ${if(v.connected) "conectada" else "desconectada"}\nPlataforma: ${v.mode}\nChat: ${v.chat}")
                 button("Elegir plataforma · ${v.mode}") { val choices=arrayOf("Simulación","WhatsApp","TikTok","Chat de prueba"); AlertDialog.Builder(this).setTitle("Dónde jugar").setItems(choices) { _,i -> rt.setMode(choices[i]); Handler(mainLooper).postDelayed({ render() },250) }.show() }
-                button("Conectar accesibilidad") { confirm("Acceso al chat abierto","Brilla lee el texto y los nombres visibles del chat que confirmás y publica tus anuncios. No usa Internet, APIs de las plataformas ni servidores. Podés detenerla desde el panel o la notificación. Habilitá Brilla Trivia en la pantalla siguiente.") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }
+                button("Conectar accesibilidad") { confirm("Acceso al chat abierto","Ayelén Trivia🏹 lee el texto y los nombres visibles del chat que confirmás y publica tus anuncios. No usa Internet, APIs de las plataformas ni servidores. Podés detenerla desde el panel o la notificación. Habilitá Ayelén Trivia🏹 en la pantalla siguiente.") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }
                 button("Permitir notificación con botón Detener") { if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),5) else toast("Las notificaciones ya están permitidas.") }
                 button("Abrir panel flotante",true) { rt.service?.panel?.show() ?: toast("Primero conectá Accesibilidad.") }
-                note("Para un grupo: elegí la plataforma, abrí el panel y entrá al chat. Tocá el campo de escritura y usá Detectar y confirmar chat en el panel. Antes de iniciar debe verse al menos un mensaje con un participante reconocible.")
+                note("Para un grupo: elegí la plataforma, abrí el panel y entrá al chat. Tocá el campo de escritura y usá Detectar y confirmar chat en el panel.")
                 controls()
-                note("Primera versión de prueba. WhatsApp y TikTok pueden ocultar el campo, los remitentes o el botón Enviar. Ante dudas, Brilla pausa; no pulsa a ciegas. Empezá por Simulación.")
+                note("WhatsApp y TikTok pueden ocultar el campo, los remitentes o el botón Enviar. Ante dudas, Ayelén Trivia🏹 pausa; no pulsa a ciegas.")
                 button("Actualizar estado") { render() }
             }
             "Preguntas y respuestas" -> {
@@ -88,11 +88,15 @@ class MainActivity:Activity() {
             "Configuración del juego" -> {
                 title("Configuración del juego"); val c=v.config
                 note("Los cambios se aplican en la próxima partida.")
+                title("Participación de la anfitriona")
+                val hostPlays=check("La anfitriona también juega",c.hostPlays)
+                val hostName=input("Nombre de la anfitriona",c.hostName)
+                note("Cuando está activada, los mensajes propios escritos manualmente se atribuyen a este nombre. Los anuncios automáticos nunca suman puntos.")
                 val rounds=number("Cantidad de preguntas (1–1000)",c.rounds.toLong())
                 val quick=LinearLayout(this); listOf(10,20,30,50).forEach { n -> quick.addView(Style.button(this,n.toString()) { rounds.setText(n.toString()) }.apply { layoutParams=LinearLayout.LayoutParams(0,-2,1f) }) }; content.addView(quick)
-                val time=number("Segundos para responder (1–300)",c.answerMs/1000)
+                val time=number("Segundos para responder (10, 20, 30 u otro entre 1–300)",c.answerMs/1000)
                 val gap=number("Segundos entre preguntas (0–300)",c.intervalMs/1000)
-                val points=number("Puntos por acierto (1–100)",c.points.toLong())
+                val points=number("Puntos máximos de referencia (1–100)",c.points.toLong())
                 val send=number("Segundos mínimos entre publicaciones (2–60)",c.sendIntervalMs/1000)
                 val length=number("Máximo de caracteres por publicación (100–4000)",c.messageLength.toLong())
                 val random=check("Orden aleatorio",c.random); val repeat=check("Repetir preguntas al agotar el banco",c.repeat)
@@ -102,18 +106,18 @@ class MainActivity:Activity() {
                 val top=number("Posiciones: 3, 5, 10 o 0 para completa",c.rankingSize.toLong())
                 button("Guardar configuración",true) {
                     try {
-                        val updated=GameConfig(rounds.text.toString().toInt(),time.text.toString().toLong()*1000,gap.text.toString().toLong()*1000,points.text.toString().toInt(),random.isChecked,repeat.isChecked,shuffle.isChecked,exhaust.isChecked,multiple.isChecked,ranking.isChecked,top.text.toString().toInt(),accents.isChecked,send.text.toString().toLong()*1000,length.text.toString().toInt())
+                        val updated=GameConfig(rounds.text.toString().toInt(),time.text.toString().toLong()*1000,gap.text.toString().toLong()*1000,points.text.toString().toInt(),random.isChecked,repeat.isChecked,shuffle.isChecked,exhaust.isChecked,multiple.isChecked,ranking.isChecked,top.text.toString().toInt(),accents.isChecked,send.text.toString().toLong()*1000,length.text.toString().toInt(),hostPlays.isChecked,hostName.text.toString().ifBlank { "Ayelén🏹" })
                         val err=updated.error(); if(err!=null) toast(err) else rt.database({ it.save(updated); "Configuración guardada." }) { toast(it); render() }
                     } catch(_:Exception) { toast("Revisá los números ingresados.") }
                 }
-                note("Si desactivás la repetición, la partida termina al agotar el banco. La separación de envíos no garantiza que las plataformas permitan automatización.")
+                note("La puntuación depende de la velocidad: más rápido, más puntos (máximo 15, mínimo 1).")
             }
             "Mensajes y anuncios" -> {
                 title("Tu estilo, tus anuncios")
                 note("Editá texto, emojis, orden y activación. Variables: "+Templates.variables.joinToString(" ") { "{$it}" })
                 v.templates.sortedBy { it.order }.forEach { t -> button((if(t.enabled) "✓ " else "○ ")+t.label) { editTemplate(t) } }
                 button("Restaurar plantillas") { confirm("Restaurar anuncios","Se reemplazarán tus modificaciones.") { rt.database({ it.save(Templates.defaults()); "Plantillas restauradas." }) { toast(it); render() } } }
-                note("La pausa de seguridad no publica mensajes. En esta versión las plantillas de pausa y reanudación quedan guardadas para uso posterior; el control se informa en el panel.")
+                note("La pausa de seguridad no publica mensajes.")
             }
             "Clasificación" -> {
                 title("Puntuación acumulada")
@@ -127,7 +131,7 @@ class MainActivity:Activity() {
             }
             "Simulación" -> {
                 title("Probá sin enviar al chat")
-                note("Usa el mismo motor y cronómetro. Elegí Simulación antes de iniciar. Los mensajes de esta pantalla nunca se envían a otras aplicaciones.")
+                note("Usa el mismo motor y cronómetro. Elegí Simulación antes de iniciar.")
                 button("Elegir Simulación") { rt.setMode("Simulación"); toast("Si hay una partida activa, detenela primero.") }
                 controls()
                 val messages=input("Una línea por mensaje: Nombre: respuesta","Pedro: Londres\nPedro: París\nMaría: París",true)
@@ -142,10 +146,10 @@ class MainActivity:Activity() {
             else -> {
                 title("Diagnóstico")
                 note("Servicio: ${v.connected}\nModo: ${v.mode}\nChat: ${v.chat}\nCampo: ${v.field}\nEnvío: ${v.sender}\nEstado: ${v.status}\n${v.diagnostic}")
-                note("Solo se observan mensajes visibles y accesibles. No se guarda una copia del chat. No se adjudican puntos a remitentes ambiguos. Los nombres duplicados no se distinguen con certeza.")
+                note("Solo se observan mensajes visibles y accesibles. No se guarda una copia del chat. No se adjudican puntos a remitentes ambiguos.")
                 button("Actualizar") { render() }
                 button("Desactivar accesibilidad") { rt.stopNow(); rt.service?.disableSelf() }
-                button("Eliminar datos locales") { confirm("Eliminar todos los datos","Se borrarán preguntas, ajustes, plantillas y partidas de Brilla Trivia.") { rt.stopNow(); (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData() } }
+                button("Eliminar datos locales") { confirm("Eliminar todos los datos","Se borrarán preguntas, ajustes, plantillas y partidas.") { rt.stopNow(); (getSystemService(ACTIVITY_SERVICE) as ActivityManager).clearApplicationUserData() } }
             }
         }
         observer(rt.view)

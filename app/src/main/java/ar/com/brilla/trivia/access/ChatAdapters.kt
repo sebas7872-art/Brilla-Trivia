@@ -9,16 +9,32 @@ data class Binding(val pkg: String,val titleId: String,val title: String,val fie
 data class Detected(val binding: Binding?,val reason: String,val titles: List<UiNode>,val field: UiNode?)
 data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<String>,val textIds:Set<String>,val senderIds:Set<String>,val rowIds:Set<String>,val ownIds:Set<String>,val sendIds:Set<String>) {
     private fun local(id:String)=id.substringAfterLast('/')
-    fun titles(f:Frame)=f.nodes.filter { local(it.id) in titleIds && it.text.isNotBlank() && !it.editable }.distinctBy { it.id to it.text }
-    fun fields(f:Frame)=f.nodes.filter { it.editable && it.enabled && it.id.isNotBlank() }
+    fun titles(f:Frame): List<UiNode> {
+        val byId = f.nodes.filter { local(it.id) in titleIds && it.text.isNotBlank() && !it.editable }
+        if (byId.isNotEmpty()) return byId.distinctBy { it.id to it.text }
+        return f.nodes.filter {
+            !it.editable && it.text.isNotBlank() && it.text.length in 2..60 && it.y < 400 &&
+            !it.type.contains("Button", ignoreCase=true) && !it.clickable
+        }.distinctBy { it.text }.take(5)
+    }
+    fun fields(f:Frame)=f.nodes.filter { it.editable && it.enabled }
+    fun candidateFields(f:Frame): List<UiNode> {
+        val all = fields(f)
+        val focused = all.filter { it.focused }
+        if (focused.size == 1) return focused
+        val withId = all.filter { it.id.isNotBlank() }
+        return if (withId.isNotEmpty()) withId else all
+    }
     fun inspect(f:Frame,b:Binding): String? = when {
         f.pkg != b.pkg -> "Esta no es la aplicación donde comenzó la partida."
         f.window != b.window -> "Cambió la ventana. Volvé a confirmar el grupo original."
-        f.nodes.count { it.id==b.titleId && it.text==b.title && !it.editable } != 1 -> "Esta no es la ventana donde comenzó la partida. Volvé al grupo original."
-        f.nodes.count { it.id==b.fieldId && it.type==b.fieldType && it.editable && it.enabled } != 1 -> "Campo de escritura no disponible."
+        f.nodes.count { (it.id==b.titleId || b.titleId.isBlank()) && it.text==b.title && !it.editable } < 1 -> "Esta no es la ventana donde comenzó la partida. Volvé al grupo original."
+        field(f,b) == null -> "Campo de escritura no disponible."
         else -> null
     }
     fun field(f:Frame,b:Binding)=f.nodes.singleOrNull { it.id==b.fieldId && it.type==b.fieldType && it.editable && it.enabled }
+        ?: if (b.fieldId.isBlank()) f.nodes.singleOrNull { it.editable && it.enabled && it.type==b.fieldType }
+        else null
     fun send(f:Frame): UiNode? {
         val known=f.nodes.filter { it.enabled && it.clickable && local(it.id) in sendIds }
         if(known.size==1) return known.single()

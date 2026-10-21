@@ -191,4 +191,32 @@ class CoreTest {
         assertFalse(e.scores.containsKey("Melina"))
     }
 
+
+    @Test fun hostManualReplyScoresWhenInferredOwnOnTikTok() {
+        // Synthetic TikTok frame: no sender name, no own keyword → inferred own
+        val body = node("r/1", "message_text", "Marte", y=400, parent="r")
+        val row = node("r", "message_row", "", y=390, parent="root")
+        val frame = Frame("com.zhiliaoapp.musically", 1, listOf(body, row))
+        val msgs = Adapters.tiktok.messages(frame)
+        val m = msgs.find { it.text == "Marte" }
+        assertNotNull(m)
+        assertTrue(m!!.own)
+        assertTrue(m.reliable)
+        // Engine attributes to host
+        val e = engine(GameConfig(rounds=1, hostPlays=true, hostName="Ayelén🏹", answerMs=30_000, ignoreAccents=true))
+        until(e, Phase.ANSWERS)
+        assertTrue(e.receive(m))
+        assertTrue(e.scores.containsKey("Ayelén🏹"))
+        assertEquals(1, e.scores.size)
+    }
+
+    @Test fun automaticBotMessageStillDoesNotScore() {
+        val e = engine(GameConfig(rounds=1, hostPlays=true, hostName="Ayelén🏹", answerMs=30_000))
+        until(e, Phase.ANSWERS)
+        // Simulate an auto announcement that was enqueued
+        val auto = ChatMessage("auto-id", null, "⏳ ¡Tienen 30 segundos!", own=true, reliable=true)
+        assertFalse(e.receive(auto))
+        assertTrue(e.scores.isEmpty())
+    }
+
 }

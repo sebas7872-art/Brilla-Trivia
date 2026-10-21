@@ -108,7 +108,7 @@ data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<St
             parent = p.parent
         }
         val children = descendants(bestContainer.path)
-        val own = looksOwn(bestContainer, children) || looksOwn(body, children)
+        val strongOwn = looksOwn(bestContainer, children) || looksOwn(body, children)
         // Sender names only from nodes that are close to the body (similar y, or known sender ids)
         val nameCandidates = children.filter {
             (local(it.id) in senderIds || localLower(it.id).contains("name") || localLower(it.id).contains("nick")) &&
@@ -116,9 +116,15 @@ data class Adapter(val label:String,val packages:Set<String>,val titleIds:Set<St
             kotlin.math.abs(it.y - body.y) < 180
         }.map { it.text.ifBlank { it.desc }.trim() }.filter { it.isNotBlank() }.distinct()
 
+        // On TikTok, own messages in groups typically omit the sender name.
+        // If no name is found and there is no strong own marker, treat as inferred own
+        // so the host can score when hostPlays is on. Auto texts are still filtered later.
+        val inferredOwn = !strongOwn && nameCandidates.isEmpty() && label == "TikTok"
+        val own = strongOwn || inferredOwn
         val sender = if (nameCandidates.size == 1 && !own) nameCandidates.single() else null
         val reliable = when {
-            own -> true // strong own signal
+            strongOwn -> true
+            inferredOwn -> true // host path will still exclude autos
             sender != null && nameCandidates.size == 1 -> true
             else -> false
         }
